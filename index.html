@@ -120,6 +120,88 @@
   }
   .chip:hover { background: #eaeaf3; color: var(--blue); }
 
+  /* ---------- 首页热门推荐 ---------- */
+  #trending {
+    width: 100%;
+    max-width: 654px;
+    margin-top: 42px;
+  }
+  .trending-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    margin-bottom: 14px;
+  }
+  .trending-title {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text);
+  }
+  .trending-more { font-size: 13px; color: var(--blue); }
+  .trending-more:hover { text-decoration: underline; }
+  .trending-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+  }
+  .tcard {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 14px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--bg);
+    transition: border-color .18s, box-shadow .18s, transform .18s;
+    cursor: pointer;
+    text-align: left;
+  }
+  .tcard:hover {
+    border-color: var(--blue);
+    box-shadow: 0 4px 14px rgba(78,110,242,.12);
+    transform: translateY(-2px);
+  }
+  .tcard .t-name {
+    font-size: 14px;
+    font-weight: 600;
+    color: #1a0dab;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .tcard .t-owner { color: #5f6368; font-weight: 400; }
+  .tcard .t-desc {
+    font-size: 12px;
+    color: var(--text-sub);
+    line-height: 1.5;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    min-height: 36px;
+    word-break: break-word;
+  }
+  .tcard .t-desc.empty { color: #b4b4b4; font-style: italic; }
+  .tcard .t-meta {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: auto;
+    font-size: 12px;
+    color: var(--text-light);
+  }
+  .tcard .t-meta .item { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+  .tcard .t-meta svg { width: 13px; height: 13px; }
+  .tcard .t-meta .st-star svg { color: var(--star); }
+  .tcard .t-lang { display: inline-flex; align-items: center; }
+  .tcard .t-skel {
+    height: 118px;
+    border-radius: var(--radius);
+    background: linear-gradient(90deg, #f0f0f0 25%, #f7f7f7 37%, #f0f0f0 63%);
+    background-size: 400% 100%;
+    animation: shine 1.3s ease-in-out infinite;
+  }
+
   /* ---------- 结果页顶栏 ---------- */
   #header {
     display: none;
@@ -523,6 +605,10 @@
     #home .brand svg { width: 38px; height: 38px; }
     #header .logo span { display: none; }
     #header .bar { gap: 12px; }
+    .trending-grid { grid-template-columns: repeat(2, 1fr); }
+  }
+  @media (max-width: 480px) {
+    .trending-grid { grid-template-columns: 1fr; }
   }
 </style>
 </head>
@@ -549,6 +635,13 @@
       <button class="chip" id="openSettings" title="配置 GitHub Token 以提升限额">⚙ 设置</button>
       <span class="trans-status" id="transStatus"></span>
     </div>
+  </div>
+  <div class="trending" id="trending">
+    <div class="trending-head">
+      <span class="trending-title">热门推荐</span>
+      <a class="trending-more" href="#q=stars:>50000">查看更多 ›</a>
+    </div>
+    <div class="trending-grid" id="trendingGrid"></div>
   </div>
 </div>
 
@@ -758,6 +851,48 @@
     const data = await res.json();
     state.searchCache.set(key, data);
     return data;
+  }
+
+  // 首页热门推荐：拉取全语言 stars 最高的 6 个项目
+  const TRENDING_Q = 'stars:>50000';
+  const TRENDING_N = 6;
+  let trendingLoaded = false;
+
+  async function loadTrending() {
+    const grid = $('trendingGrid');
+    if (!grid || trendingLoaded) return;
+    // 骨架屏
+    grid.innerHTML = Array.from({ length: TRENDING_N }, () => '<div class="t-skel"></div>').join('');
+    try {
+      const path = `/search/repositories?q=${encodeURIComponent(TRENDING_Q)}&sort=stars&order=desc&per_page=${TRENDING_N}`;
+      const res = await apiGet(path);
+      const data = await res.json();
+      const items = (data.items || []).slice(0, TRENDING_N);
+      if (!items.length) { $('trending').style.display = 'none'; return; }
+      grid.innerHTML = items.map(trendingCard).join('');
+      trendingLoaded = true;
+    } catch (e) {
+      // 拉取失败（限流/网络）不打断首页，静默隐藏推荐模块
+      $('trending').style.display = 'none';
+    }
+  }
+
+  function trendingCard(r) {
+    const full = `${r.owner?.login || ''}/${r.name}`;
+    const desc = r.description
+      ? `<div class="t-desc">${esc(r.description)}</div>`
+      : `<div class="t-desc empty">暂无描述</div>`;
+    const lang = r.language
+      ? `<span class="item t-lang"><i class="dot-lang" style="background:${langColor(r.language)}"></i>${esc(r.language)}</span>`
+      : '';
+    return `<div class="tcard" data-repo="${esc(full)}" data-url="${esc(r.html_url)}">
+      <div class="t-name"><span class="t-owner">${esc(r.owner?.login || '')} /</span> ${esc(r.name)}</div>
+      ${desc}
+      <div class="t-meta">
+        ${lang}
+        <span class="item st-star">${ICON.star}${fmtNum(r.stargazers_count)}</span>
+      </div>
+    </div>`;
   }
 
   // 最新 Release：只取 1 条，带内存 + sessionStorage 缓存
@@ -1463,6 +1598,19 @@
     navigate({ q: b.dataset.q, tab: 'repos' });
   });
 
+  // 首页热门推荐卡片：点击打开 GitHub，点击仓库名区域可按名搜索
+  $('trending').addEventListener('click', (e) => {
+    const card = e.target.closest('.tcard');
+    if (!card) return;
+    const name = card.dataset.repo;
+    if (e.target.closest('.t-name')) {
+      state.page = 1;
+      navigate({ q: name, tab: 'repos' });
+    } else {
+      window.open(card.dataset.url, '_blank', 'noopener');
+    }
+  });
+
   els.tabs.addEventListener('click', (e) => {
     const t = e.target.closest('.tab');
     if (!t || t.dataset.tab === state.tab) return;
@@ -1559,7 +1707,7 @@
 
   // ======================= 启动 =======================
   if (readUrl()) doSearch({ push: false });
-  else { showHome(); els.homeInput.focus(); }
+  else { showHome(); els.homeInput.focus(); loadTrending(); }
 })();
 </script>
 </body>
